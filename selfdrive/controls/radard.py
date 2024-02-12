@@ -9,9 +9,9 @@ from cereal import messaging, log, car
 from openpilot.common.numpy_fast import interp
 from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper, Priority, config_realtime_process
-from openpilot.system.swaglog import cloudlog
+from openpilot.common.swaglog import cloudlog
 
-from openpilot.common.kalman.simple_kalman import KF1D
+from openpilot.common.simple_kalman import KF1D
 
 
 # Default lead acceleration decay set to 50% at 1s
@@ -270,6 +270,7 @@ class RadarD:
 
     # publish tracks for UI debugging (keep last)
     tracks_msg = messaging.new_message('liveTracks', len(self.tracks))
+    tracks_msg.valid = self.radar_state_valid
     for index, tid in enumerate(sorted(self.tracks.keys())):
       tracks_msg.liveTracks[index] = {
         "trackId": tid,
@@ -281,7 +282,7 @@ class RadarD:
 
 
 # fuses camera and radar data for best lead detection
-def radard_thread(sm: Optional[messaging.SubMaster] = None, pm: Optional[messaging.PubMaster] = None, can_sock: Optional[messaging.SubSocket] = None):
+def main():
   config_realtime_process(5, Priority.CTRL_LOW)
 
   # wait for stats about the car to come in from controls
@@ -295,12 +296,9 @@ def radard_thread(sm: Optional[messaging.SubMaster] = None, pm: Optional[messagi
   RadarInterface = importlib.import_module(f'selfdrive.car.{CP.carName}.radar_interface').RadarInterface
 
   # *** setup messaging
-  if can_sock is None:
-    can_sock = messaging.sub_sock('can')
-  if sm is None:
-    sm = messaging.SubMaster(['modelV2', 'carState'], ignore_avg_freq=['modelV2', 'carState'])  # Can't check average frequency, since radar determines timing
-  if pm is None:
-    pm = messaging.PubMaster(['radarState', 'liveTracks'])
+  can_sock = messaging.sub_sock('can')
+  sm = messaging.SubMaster(['modelV2', 'carState'], ignore_avg_freq=['modelV2', 'carState'])  # Can't check average frequency, since radar determines timing
+  pm = messaging.PubMaster(['radarState', 'liveTracks'])
 
   RI = RadarInterface(CP)
 
@@ -320,10 +318,6 @@ def radard_thread(sm: Optional[messaging.SubMaster] = None, pm: Optional[messagi
     RD.publish(pm, -rk.remaining*1000.0)
 
     rk.monitor_time()
-
-
-def main(sm: Optional[messaging.SubMaster] = None, pm: Optional[messaging.PubMaster] = None, can_sock: messaging.SubSocket = None):
-  radard_thread(sm, pm, can_sock)
 
 
 if __name__ == "__main__":
